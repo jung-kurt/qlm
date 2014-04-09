@@ -34,7 +34,7 @@ func ExampleDbType_01() {
 }
 
 // This example demonstrates a simple use of qlm. Note the use of Go slice and
-// comparison expressions in the WHERE clause. Also, note that replacement
+// comparison expressions in the WHERE clause. Also note that replacement
 // parameters use a one-based index to access parameters that follow the clause
 // in the call to Retrieve().
 func ExampleDbType_02() {
@@ -79,7 +79,8 @@ func ExampleDbType_03() {
 		db.Retrieve(&list, "WHERE FileStr == ?1", rec.FileStr)
 		if len(list) == 1 {
 			if chksum == sha1.Sum(list[0].Img) {
-				fmt.Printf("%s, SHA1: %v, length: %d\n", rec.FileStr, chksum, len(rec.Img))
+				fmt.Printf("%s, SHA1: %v, length: %d\n",
+					rec.FileStr, chksum, len(rec.Img))
 			}
 		}
 		db.Close()
@@ -108,8 +109,6 @@ func ExampleDbType_04() {
 	db.TableCreate(&rec)
 	rec.Tm = time.Date(1927, 9, 20, 12, 0, 0, 0, time.UTC)
 	rec.Dur, _ = time.ParseDuration("168h")
-	rec.Ratio.SetFrac64(53, 54)
-	rec.Amt.SetInt64(56)
 	var j, num, den int64
 	num = 52
 	den = 53
