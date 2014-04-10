@@ -38,8 +38,8 @@ Later, to receive updates, run
 
 Quick Start
 
-The following Go code demonstrates the creation of a table and subsequent
-operations.
+The following Go code demonstrates the creation of a database, the creation of
+a table within that database, and subsequent operations.
 
 	type recType struct {
 		ID   int64  `ql_table:"rec"`

@@ -20,8 +20,10 @@ import (
 	"code.google.com/p/qlm"
 	"crypto/sha1"
 	"fmt"
+	"github.com/cznic/ql"
 	"io/ioutil"
 	"math/big"
+	"os"
 	"time"
 )
 
@@ -182,41 +184,56 @@ func ExampleDbType_04() {
 	// *** 1003 *** 1003 0 0
 }
 
-// This example demonstrates a record update. Here, only fields B and C are
-// updated. If all fields are to be updated, use "*" as the only argument after
-// the slice.
+// This example demonstrates a record update. In the first call to Update(),
+// only fields B and C are updated. In the second call, all fields are updated.
 func ExampleDbType_05() {
 	type recType struct {
 		ID      int64 `ql_table:"rec"`
 		A, B, C int64 `ql:"*"`
 	}
+	var rec recType
 	db := qlm.DbCreate("data/example.ql")
 	db.TableCreate(&recType{})
+	adjust := func() {
+		rec.A += 1000
+		rec.B += 1000
+		rec.C += 1000
+	}
+	retrieve := func() {
+		var rl []recType
+		// fmt.Printf("Rec ID %d\n", rec.ID)
+		db.Retrieve(&rl, "WHERE id() == ?1", rec.ID)
+		if len(rl) > 0 {
+			for _, r := range rl {
+				fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
+			}
+
+		}
+	}
 	var list []recType
 	for j := int64(0); j < 10; j++ {
 		list = append(list, recType{0, j, j + 1, j + 2})
 	}
 	db.Insert(list)
-	list = nil // Empty the slice
+	list = nil
 	db.Retrieve(&list, "WHERE A == ?1", int64(2))
 	if len(list) > 0 {
-		id := list[0].ID
-		list[0].A += 5000
-		list[0].B += 5000
-		list[0].C += 5000
-		db.Update(&list[0], "B", "C") // Update only B and C in the database
-		list = nil
-		db.Retrieve(&list, "WHERE id() == ?1", id)
-		for _, r := range list {
-			fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
-		}
+		rec = list[0]
+		// fmt.Printf("%v\n", rec)
+		adjust()
+		db.Update(&rec, "B", "C") // Update only B and C in the database
+		retrieve()
+		adjust()
+		db.Update(&rec, "*") // Update all fields
+		retrieve()
 	}
 	db.Close()
 	if db.Err() {
 		fmt.Println(db.Error())
 	}
 	// Output:
-	// 2 5003 5004
+	// 2 1003 1004
+	// 2002 2003 2004
 }
 
 // This example demonstrates record deletion.
@@ -260,4 +277,142 @@ func ExampleDbType_06() {
 	// 1 2 3
 	// 2 3 4
 	// 3 4 5
+}
+
+// This example demonstrates using ql to open and close the database. This
+// could be useful if the ql database needs to be opened with special options.
+func ExampleDbType_07() {
+	dbFileStr := "data/example.ql"
+	type recType struct {
+		ID      int64 `ql_table:"sample"`
+		A, B, C int64 `ql:"*"`
+	}
+	os.Remove(dbFileStr)
+	hnd, err := ql.OpenFile(dbFileStr, &ql.Options{CanCreate: true})
+	if err == nil {
+		db := qlm.DbSetHandle(hnd)
+		db.TableCreate(&recType{})
+		var list []recType
+		for j := int64(0); j < 3; j++ {
+			list = append(list, recType{0, j, j + 1, j + 2})
+		}
+		db.Retrieve(&list, "ORDER BY A DESC")
+		for _, r := range list {
+			fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
+		}
+		hnd.Close()
+		err = db.Error()
+	}
+	if err != nil {
+		fmt.Println(err)
+	}
+	// Output:
+	// 0 1 2
+	// 1 2 3
+	// 2 3 4
+}
+
+// This example is a menagerie of various failure code paths. It is a catchall
+// of routines needed for complete test coverage using the go cover tool.
+func ExampleDbType_08() {
+	type recType struct {
+		ID      int64 `ql_table:"rec"`
+		A, B, C int64 `ql:"*"`
+	}
+	var db *qlm.DbType
+	report := func() {
+		if db.Err() {
+			fmt.Println(db.Error())
+		}
+		db.ClearError()
+	}
+	var rl []recType
+	var rec recType
+	db = qlm.DbCreate("data/foo/bar/baz/example.ql")
+	db.Close()
+	report()
+	os.RemoveAll("data/foo")
+	db = qlm.DbCreate("data/example.ql")
+	db.SetErrorf("application %s", "error")
+	err := db.Error()
+	// The following several calls exercise the quick return on existing error
+	// condition
+	db.Exec("foo")
+	db.TableCreate(&rec)
+	db.Update(&rec)
+	db.Retrieve(&rl, "")
+	db.Insert(rl)
+	db.Delete(&rec, "")
+	report()
+	db.SetError(err)
+	report()
+	db.Update(&rec)
+	report()
+	db.Insert(&rec)
+	report()
+	db.Retrieve(&rec, "")
+	report()
+	db.Retrieve(rec, "")
+	report()
+	db.TransactCommit()
+	report()
+	db.TransactRollback()
+	report()
+	db.Trace(true)
+	db.Exec("foo")
+	db.Trace(false)
+	report()
+	type aType struct {
+		ID  bool  `ql_table:"a"`
+		Val int64 `ql:"*"`
+	}
+	db.TableCreate(&aType{})
+	report()
+	type bType struct {
+		ID  int64 `ql_table:"b"`
+		Val int64
+	}
+	db.TableCreate(&bType{})
+	report()
+	var a int
+	db.TableCreate(a)
+	report()
+	db.TableCreate(&a)
+	report()
+	type cType struct {
+		ID  int64      `ql_table:"b"`
+		Hnd qlm.DbType `ql:"*"`
+	}
+	db.TableCreate(&cType{})
+	report()
+	type dType struct {
+		ID1 int64 `ql_table:"d1"`
+		ID2 int64 `ql_table:"d2"`
+		Val int64 `ql:"*"`
+	}
+	db.TableCreate(&dType{})
+	report()
+	type eType struct {
+		Val int64 `ql:"*"`
+	}
+	db.TableCreate(&eType{})
+	report()
+	// Output:
+	// application error
+	// application error
+	// at least one field name expected in function Update
+	// function Insert requires slice as first argument
+	// function Retrieve expecting pointer to slice, got pointer to struct
+	// function Retrieve expecting pointer to slice, got struct
+	// no transaction to commit
+	// no transaction to rollback
+	// QL [--E] foo
+	// 1:1 syntax error
+	// expecting int64 for id, got bool
+	// no structure fields have "ql" tag
+	// expecting record pointer, got int
+	// specified address must be of structure with one or more fields that have a "ql" tag
+	// database does not support fields of type qlm.DbType
+	// multiple occurrence of ql_table tag
+	// missing "ql_table" tag
 }

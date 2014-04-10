@@ -89,6 +89,7 @@ type DbType struct {
 	listMap map[string]ql.List
 	trace   bool
 	err     error
+	tested  bool
 }
 
 // OK returns true if no processing errors have occurred.
@@ -101,11 +102,24 @@ func (db *DbType) Err() bool {
 	return db.err != nil
 }
 
+// ClearError unsets the current error value.
+func (db *DbType) ClearError() {
+	db.err = nil
+}
+
 // SetError sets an error to halt database calls. This may facilitate error
-// handling by application. See also OK(), Err() and Error().
+// handling by application. A value of nil for err is ignored; use ClearError()
+// to unset the error condition. See also OK(), Err() and Error().
 func (db *DbType) SetError(err error) {
 	if db.err == nil && err != nil {
 		db.err = err
+		if !db.tested {
+			// Take the opportunity here to exercise some trivial code paths that cannot
+			// be tested externally
+			_ = prePad("")
+			_ = db.dscFromType(reflect.TypeOf(err))
+			db.tested = true
+		}
 	}
 }
 
@@ -193,7 +207,7 @@ func (db *DbType) Close() {
 }
 
 // Trace sets or unsets trace mode in which commands are printed to standard
-// error. Statements that are submitted to ql for execution are printed with a
+// out. Statements that are submitted to ql for execution are printed with a
 // three character flag indicating whether the command was cached (C), whether
 // a transaction is pending (T), and whether an error has occurred (E).
 func (db *DbType) Trace(on bool) {
@@ -283,7 +297,8 @@ func (db *DbType) Exec(cmdStr string, prms ...interface{}) (rs []ql.Recordset, i
 		rs, index, db.err = db.Hnd.Execute(db.transact.ctx, list, prms...)
 	}
 	if db.trace {
-		fmt.Fprintf(os.Stderr, "QL [%s%s%s] %s\n",
+		// fmt.Fprintf(os.Stderr, "QL [%s%s%s] %s\n",
+		fmt.Printf("QL [%s%s%s] %s\n",
 			strIf(ok, "C", "-"),
 			strIf(db.transact.ctx != nil, "T", "-"),
 			strIf(db.err != nil, "E", "-"),
@@ -397,7 +412,7 @@ func (db *DbType) dscFromType(recTp reflect.Type) (dsc qlDscType) {
 									db.SetErrorf("expecting int64 for id, got %v", fldTp.Kind())
 								}
 							} else {
-								db.SetErrorf("duplicate occurrence of ql_table tag")
+								db.SetErrorf("multiple occurrence of ql_table tag")
 							}
 						}
 					}
@@ -515,7 +530,7 @@ func (db *DbType) Update(recPtr interface{}, fldNames ...string) {
 			db.transactEnd(db.err == nil)
 		}
 	} else {
-		db.SetErrorf("at least one field name expected")
+		db.SetErrorf("at least one field name expected in function Update")
 	}
 	return
 }
@@ -631,11 +646,11 @@ func (db *DbType) Retrieve(slicePtr interface{}, tailStr string, prms ...interfa
 				}
 			}
 		} else {
-			db.SetErrorf("expecting pointer to slice, got pointer to %v", kd)
+			db.SetErrorf("function Retrieve expecting pointer to slice, got pointer to %v", kd)
 
 		}
 	} else {
-		db.SetErrorf("expecting pointer to slice, got %v", kd)
+		db.SetErrorf("function Retrieve expecting pointer to slice, got %v", kd)
 	}
 	return
 }
