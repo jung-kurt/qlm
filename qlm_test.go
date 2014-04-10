@@ -94,7 +94,16 @@ func ExampleDbType_03() {
 }
 
 // This example demonstrates the use of time, bigint and rational fields. These
-// are non-native types that are defined in libraries.
+// are non-native types that are defined in libraries. Note that the "ql" field
+// tags provide alternate names that will be used in the ql database. It is
+// these names rather than the names in the Go structure that are used in
+// expressions passed to Retrieve() and for limiting fields to be updated in
+// Update().
+//
+// Caveat: big.Int and big.Rat values are, like slices, references. Calling Set
+// or friends on them modifies the referenced components. Consequently, when
+// building up a slice to pass to Insert, be sure to use distinct instances of
+// these types.
 func ExampleDbType_04() {
 	type recType struct {
 		ID    int64         `ql_table:"lib"`
@@ -104,34 +113,27 @@ func ExampleDbType_04() {
 		Amt   big.Int       `ql:"amt"`
 	}
 	db := qlm.DbCreate("data/example.ql")
-	var list []recType
-	var rec recType
-	db.TableCreate(&rec)
-	rec.Tm = time.Date(1927, 9, 20, 12, 0, 0, 0, time.UTC)
-	rec.Dur, _ = time.ParseDuration("168h")
-	var j, num, den int64
-	num = 52
-	den = 53
-	for j = 0; j < 3; j++ {
-		num++
-		den++
-		rec.Tm = rec.Tm.Add(rec.Dur)
-		rec.Ratio.SetFrac64(num, den)
-		rec.Amt.SetInt64(num*den + j)
-		list = append(list, rec)
+	var rl [3]recType
+	db.TableCreate(&recType{})
+	tm := time.Date(1927, 9, 20, 12, 0, 0, 0, time.UTC)
+	for j := range rl {
+		rl[j].Dur, _ = time.ParseDuration(fmt.Sprintf("%dh", 168*j))
+		rl[j].Tm = tm.Add(rl[j].Dur)
+		rl[j].Ratio.SetFrac64(int64(52+j), int64(53+j))
+		rl[j].Amt.SetInt64(int64(j*1045 + j + 1))
 	}
-	db.Insert(list)
-	list = nil
+	db.Insert(rl[:])
+	var list []recType
 	db.Retrieve(&list, "ORDER BY id()")
 	for _, r := range list {
-		fmt.Printf("%s %s %s %s\n", r.Tm, r.Dur, &r.Ratio, &r.Amt)
+		fmt.Printf("%s %s %s %s\n", r.Tm, r.Dur, r.Ratio.String(), r.Amt.String())
 	}
 	db.Close()
 	if db.Err() {
 		fmt.Println(db.Error())
 	}
 	// Output:
-	// 1927-09-27 12:00:00 +0000 UTC 168h0m0s 55/56 3082
-	// 1927-10-04 12:00:00 +0000 UTC 168h0m0s 55/56 3082
-	// 1927-10-11 12:00:00 +0000 UTC 168h0m0s 55/56 3082
+	// 1927-09-20 12:00:00 +0000 UTC 0 52/53 1
+	// 1927-09-27 12:00:00 +0000 UTC 168h0m0s 53/54 1047
+	// 1927-10-04 12:00:00 +0000 UTC 336h0m0s 54/55 2093
 }
