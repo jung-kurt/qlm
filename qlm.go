@@ -555,6 +555,25 @@ func (db *DbType) Delete(recPtr interface{}, tailStr string, prms ...interface{}
 	}
 }
 
+// Truncate removes all records from the table in the database associated with
+// the specified record pointer.
+func (db *DbType) Truncate(recPtr interface{}) {
+	if db.err != nil {
+		return
+	}
+	// TRUNCATE TABLE foo;
+	var dsc qlDscType
+	dsc = db.dscFromPtr(recPtr)
+	if db.err == nil {
+		db.TransactBegin()
+		if db.err == nil {
+			cmd := fmt.Sprintf("TRUNCATE TABLE %s;", dsc.tblStr)
+			_, _ = db.Exec(cmd)
+		}
+		db.transactEnd(db.err == nil)
+	}
+}
+
 // Insert stores in the database the records included in the specified slice.
 // The value of the ID field that is tagged with "ql_table" is ignored.
 func (db *DbType) Insert(slice interface{}) {

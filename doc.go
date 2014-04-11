@@ -16,9 +16,9 @@
 
 /*
 Package qlm implements a simple, high-level wrapper for ql, a native, embedded
-database engine written in Go. All database operations are abstracted from
-specially tagged structures that define the fields to be managed by the
-database.
+database engine written in Go. Each table in the database is associated with an
+application-defined structure in Go. These structures contain special tags that
+allow qlm to automatically manage all database operations.
 
 The ql website is https://github.com/cznic/ql
 
@@ -81,7 +81,8 @@ a call to Error().
 
 Limitations
 
-This wrapper to ql does not currently support table joins or table alterations.
+This wrapper to ql does not currently support table joins, table alterations or
+table indexes.
 
 */
 package qlm

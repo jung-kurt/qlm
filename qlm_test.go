@@ -219,7 +219,6 @@ func ExampleDbType_05() {
 	db.Retrieve(&list, "WHERE A == ?1", int64(2))
 	if len(list) > 0 {
 		rec = list[0]
-		// fmt.Printf("%v\n", rec)
 		adjust()
 		db.Update(&rec, "B", "C") // Update only B and C in the database
 		retrieve()
@@ -243,25 +242,23 @@ func ExampleDbType_06() {
 		A, B, C int64 `ql:"*"`
 	}
 	db := qlm.DbCreate("data/example.ql")
+	show := func(str string) {
+		var rs []recType
+		db.Retrieve(&rs, "ORDER BY A")
+		fmt.Printf("%s\n", str)
+		for _, r := range rs {
+			fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
+		}
+	}
 	db.TableCreate(&recType{})
 	var list []recType
 	for j := int64(0); j < 5; j++ {
 		list = append(list, recType{0, j, j + 1, j + 2})
 	}
 	db.Insert(list)
-	list = nil
-	db.Retrieve(&list, "ORDER BY A")
-	fmt.Printf("All records after Insert()\n")
-	for _, r := range list {
-		fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
-	}
+	show("All records after Insert()")
 	db.Delete(&recType{}, "WHERE A == ?1 || A == ?2", int64(0), int64(4))
-	list = nil
-	db.Retrieve(&list, "ORDER BY A")
-	fmt.Printf("All records after Delete()\n")
-	for _, r := range list {
-		fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
-	}
+	show("All records after Delete()")
 	db.Close()
 	if db.Err() {
 		fmt.Println(db.Error())
@@ -279,9 +276,47 @@ func ExampleDbType_06() {
 	// 3 4 5
 }
 
+// This example demonstrates table truncation.
+func ExampleDbType_07() {
+	type recType struct {
+		ID      int64 `ql_table:"rec"`
+		A, B, C int64 `ql:"*"`
+	}
+	db := qlm.DbCreate("data/example.ql")
+	show := func(str string) {
+		var rs []recType
+		db.Retrieve(&rs, "ORDER BY A")
+		fmt.Printf("%s\n", str)
+		for _, r := range rs {
+			fmt.Printf("%d %d %d\n", r.A, r.B, r.C)
+		}
+	}
+	db.TableCreate(&recType{})
+	var list []recType
+	for j := int64(0); j < 5; j++ {
+		list = append(list, recType{0, j, j + 1, j + 2})
+	}
+	db.Insert(list)
+	show("All records after Insert()")
+	db.Truncate(&recType{})
+	show("All records after Truncate()")
+	db.Close()
+	if db.Err() {
+		fmt.Println(db.Error())
+	}
+	// Output:
+	// All records after Insert()
+	// 0 1 2
+	// 1 2 3
+	// 2 3 4
+	// 3 4 5
+	// 4 5 6
+	// All records after Truncate()
+}
+
 // This example demonstrates using ql to open and close the database. This
 // could be useful if the ql database needs to be opened with special options.
-func ExampleDbType_07() {
+func ExampleDbType_08() {
 	dbFileStr := "data/example.ql"
 	type recType struct {
 		ID      int64 `ql_table:"sample"`
@@ -312,9 +347,10 @@ func ExampleDbType_07() {
 	// 2 3 4
 }
 
-// This example is a menagerie of various failure code paths. It is a catchall
-// of routines needed for complete test coverage using the go cover tool.
-func ExampleDbType_08() {
+// This example is a menagerie of calls that exercise various failure code
+// paths. It is a catchall of routines needed for complete test coverage using
+// the go cover tool.
+func ExampleDbType_09() {
 	type recType struct {
 		ID      int64 `ql_table:"rec"`
 		A, B, C int64 `ql:"*"`
@@ -343,6 +379,7 @@ func ExampleDbType_08() {
 	db.Retrieve(&rl, "")
 	db.Insert(rl)
 	db.Delete(&rec, "")
+	db.Truncate(&rec)
 	report()
 	db.SetError(err)
 	report()
