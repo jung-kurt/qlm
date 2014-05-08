@@ -62,7 +62,7 @@ type qlDscType struct {
 	tblStr  string
 	idSf    reflect.StructField
 	recTp   reflect.Type
-	nameMap map[string]reflect.StructField // {"num":@ "name":@, ...}
+	nameMap map[string]reflect.StructField // {"num":@, "name":@, ...}
 	create  struct {
 		nameTypeStr string // "num int32, name string, ..."
 	}
@@ -575,7 +575,9 @@ func (db *DbType) Truncate(recPtr interface{}) {
 }
 
 // Insert stores in the database the records included in the specified slice.
-// The value of the ID field that is tagged with "ql_table" is ignored.
+// The value of the ID field that is tagged with "ql_table" is ignored. After
+// this function returns, the ID field of each inserted record will contain the
+// indentifier assigned by the database.
 func (db *DbType) Insert(slice interface{}) {
 	if db.err != nil {
 		return
@@ -592,13 +594,15 @@ func (db *DbType) Insert(slice interface{}) {
 			cmdStr := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);",
 				dsc.tblStr, dsc.insert.nameStr, dsc.insert.qmStr)
 			// fmt.Printf("QL [%s]\n", cmdStr)
-			var recVl reflect.Value
+			var idVal, recVl reflect.Value
 			db.TransactBegin()
 			for recJ := 0; recJ < count && db.err == nil; recJ++ { // Record loop
 				recVl = sliceVl.Index(recJ)
 				vList = valList(recVl, dsc.insert.sfList)
 				_, _ = db.Exec(cmdStr, vList...)
-				// dump(valList)
+				idVal = reflect.Indirect(reflect.NewAt(dsc.idSf.Type,
+					unsafe.Pointer(recVl.UnsafeAddr()+dsc.idSf.Offset)))
+				idVal.SetInt(db.transact.ctx.LastInsertID)
 			}
 			db.transactEnd(db.err == nil)
 		}
