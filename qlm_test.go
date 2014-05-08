@@ -30,11 +30,13 @@ import (
 // This example demonstrates a simple use of qlm. Note the use of Go slice and
 // comparison expressions in the WHERE clause. Also note that replacement
 // parameters use a one-based index to access parameters that follow the clause
-// in the call to Retrieve().
+// in the call to Retrieve(). The "ql_index" tag is used to index the table by
+// the associated field. Here, one index is based on the ID field and another
+// on the Name field.
 func ExampleDbType_01() {
 	type recType struct {
-		ID   int64  `ql_table:"rec"`
-		Name string `ql:"*"`
+		ID   int64  `ql_table:"rec" ql_index:"*"`
+		Name string `ql:"*" ql_index:"*"`
 	}
 	db := qlm.DbCreate("data/example.ql")
 	db.TableCreate(&recType{})

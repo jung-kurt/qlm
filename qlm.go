@@ -58,13 +58,19 @@ type transactType struct {
 	nest int
 }
 
+type idxType struct {
+	nameStr string
+	fldStr  string
+}
+
 type qlDscType struct {
 	tblStr  string
 	idSf    reflect.StructField
 	recTp   reflect.Type
 	nameMap map[string]reflect.StructField // {"num":@, "name":@, ...}
 	create  struct {
-		nameTypeStr string // "num int32, name string, ..."
+		nameTypeStr string    // "num int32, name string, ..."
+		idxList     []idxType // {{"fooID", "id()"}, {"fooName", "Name"}, {"fooNum", "Num"}, ...}
 	}
 	insert struct {
 		nameStr  string   // "num, name, ..."
@@ -327,12 +333,7 @@ func valueList(recVl reflect.Value, sfList []reflect.StructField) (list []reflec
 	addr := recVl.UnsafeAddr()
 	var fldVl reflect.Value
 	for _, sf := range sfList {
-		// switch sf.Type {
-		// case "bigrat", "bigint": // Could be a ql bug: address required
-		// fldVl = reflect.NewAt(sf.Type, unsafe.Pointer(addr+sf.Offset))
-		// default:
 		fldVl = reflect.Indirect(reflect.NewAt(sf.Type, unsafe.Pointer(addr+sf.Offset)))
-		// }
 		list = append(list, fldVl)
 	}
 	return
@@ -344,6 +345,10 @@ func valList(recVl reflect.Value, sfList []reflect.StructField) (list []interfac
 		list = append(list, v.Interface())
 	}
 	return
+}
+
+func idxListAppend(listPtr *[]idxType, nameStr, fldStr string) {
+	*listPtr = append(*listPtr, idxType{nameStr, fldStr})
 }
 
 // dscFromType collects meta information, for example field types and SQL
@@ -365,9 +370,16 @@ func (db *DbType) dscFromType(recTp reflect.Type) (dsc qlDscType) {
 			for j := 0; j < recTp.NumField(); j++ {
 				sfList = append(sfList, recTp.Field(j))
 			}
-			for j, sf := range sfList {
+			var indexed bool
+			for _, sf := range sfList {
 				if db.err == nil {
-					sf = dsc.recTp.Field(j)
+					indexed = len(sf.Tag.Get("ql_index")) > 0
+					// Note on indexes. In the future, if ql gains support for multi-field
+					// indexes, the ql_index tag can have strings such as "a+01", "a-02", etc.
+					// Here, "a" will be the index, the sort order of the key segment will be
+					// specified by "-" (descending) or "+" (ascending) and the significance
+					// of the key will be determined by sorting the following text (here, "01"
+					// and "02", but any text could be used).
 					fldTp = sf.Type
 					sqlStr = sf.Tag.Get("ql")
 					if len(sqlStr) > 0 {
@@ -389,6 +401,9 @@ func (db *DbType) dscFromType(recTp reflect.Type) (dsc qlDscType) {
 						}
 						dsc.nameMap[sqlStr] = sf
 						strListAppend(&createList, "%s %s", sqlStr, typeStr)
+						if indexed {
+							idxListAppend(&dsc.create.idxList, sf.Name, sqlStr)
+						}
 						dsc.insert.sfList = append(dsc.insert.sfList, sf)
 						strListAppend(&dsc.insert.nameList, "%s", sqlStr)
 						strListAppend(&qmList, "?%d", len(dsc.insert.sfList))
@@ -408,6 +423,9 @@ func (db *DbType) dscFromType(recTp reflect.Type) (dsc qlDscType) {
 									strListAppend(&dsc.sel.typeStrList, "%v", sf.Type.Kind())
 									dsc.tblStr = tblStr
 									dsc.idSf = sf
+									if indexed {
+										idxListAppend(&dsc.create.idxList, sf.Name, "id()")
+									}
 								} else {
 									db.SetErrorf("expecting int64 for id, got %v", fldTp.Kind())
 								}
@@ -456,15 +474,20 @@ func strListAppend(listPtr *[]string, fmtStr string, args ...interface{}) {
 	*listPtr = append(*listPtr, fmt.Sprintf(fmtStr, args...))
 }
 
-// TableCreate creates a table based strictly on the "ql" and "ql_table" tags
-// in the type definition of the specified record. The table is overwritten if
-// it already exists.
+// TableCreate creates a table and its associated indexes based strictly on the
+// "ql", "ql_table", and "ql_index" tags in the type definition of the
+// specified record. The table and indexes are overwritten if they already
+// exist.
 func (db *DbType) TableCreate(recPtr interface{}) {
 	if db.err != nil {
 		return
 	}
 	// DROP TABLE IF EXISTS foo
+	// DROP INDEX IF EXISTS fooID;
+	// DROP INDEX IF EXISTS fooDate;
 	// CREATE TABLE foo (num int32, name string)
+	// CREATE INDEX fooID ON foo (id());
+	// CREATE INDEX fooDate ON foo (Date);
 	var dsc qlDscType
 	dsc = db.dscFromPtr(recPtr)
 	if db.err == nil {
@@ -474,10 +497,20 @@ func (db *DbType) TableCreate(recPtr interface{}) {
 		if db.err == nil {
 			cmd := fmt.Sprintf("DROP TABLE IF EXISTS %s;", dsc.tblStr)
 			_, _ = db.Exec(cmd)
+			for _, idx := range dsc.create.idxList {
+				cmd = fmt.Sprintf("DROP INDEX IF EXISTS %s%s;", dsc.tblStr, idx.nameStr)
+				_, _ = db.Exec(cmd)
+			}
 			if db.err == nil {
 				cmd = fmt.Sprintf("CREATE TABLE %s (%s);", dsc.tblStr, dsc.create.nameTypeStr)
 				// fmt.Printf("QL [%s]\n", cmd)
 				_, _ = db.Exec(cmd)
+				for _, idx := range dsc.create.idxList {
+					cmd = fmt.Sprintf("CREATE INDEX %s%s ON %s (%s);",
+						dsc.tblStr, idx.nameStr, dsc.tblStr, idx.fldStr)
+					// fmt.Printf("QL [%s]\n", cmd)
+					_, _ = db.Exec(cmd)
+				}
 			}
 		}
 		db.transactEnd(db.err == nil)
