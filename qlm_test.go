@@ -17,10 +17,10 @@
 package qlm_test
 
 import (
-	"code.google.com/p/qlm"
 	"crypto/sha1"
 	"fmt"
 	"github.com/cznic/ql"
+	"github.com/jung-kurt/qlm"
 	"io/ioutil"
 	"math/big"
 	"os"

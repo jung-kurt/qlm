@@ -1,4 +1,3 @@
-syntax: glob
 data/*
 qlm
 *sublime*
